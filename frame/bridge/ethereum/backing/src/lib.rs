@@ -56,6 +56,7 @@ mod types {
 
 // --- crates ---
 use codec::{Decode, Encode};
+use sha3::Digest;
 // --- github ---
 use ethabi::{Event as EthEvent, EventParam as EthEventParam, ParamType, RawLog};
 // --- substrate ---
@@ -74,6 +75,10 @@ use sp_runtime::{
 use sp_std::borrow::ToOwned;
 use sp_std::{convert::TryFrom, prelude::*};
 // --- darwinia ---
+use darwinia_ethereum_backing_contract::{
+	Abi, Log as EthLog, TokenRegisterInfo, TokenLockedInfo, Erc20Name, Erc20Symbol
+};
+use darwinia_evm::{GasWeightMapping, BackingHandler};
 use darwinia_relay_primitives::relay_authorities::*;
 use darwinia_support::{
 	balance::lock::*,
@@ -81,11 +86,14 @@ use darwinia_support::{
 };
 use ethereum_primitives::{
 	receipt::{EthereumTransactionIndex, LogEntry},
-	EthereumAddress, U256,
+	EthereumAddress, U256, H160,
 };
 use types::*;
 
-pub trait Config: frame_system::Config {
+const REGISTER_FUNCTION: &[u8] = b"register(address)";
+const LOCK_FUNCTION: &[u8] = b"lock(uint32,address,address,uint256)";
+
+pub trait Config: dvm_ethereum::Config {
 	/// The ethereum backing module id, used for deriving its sovereign account ID.
 	type ModuleId: Get<ModuleId>;
 	type FeeModuleId: Get<ModuleId>;
@@ -126,6 +134,12 @@ decl_event! {
 		LockRing(AccountId, EthereumAddress, EthereumAddress, RingBalance),
 		/// Someone lock some *KTON*. [account, ethereum account, asset address, amount]
 		LockKton(AccountId, EthereumAddress, EthereumAddress, KtonBalance),
+        /// Someone register some token. [type, token, name, symbol, decimals]
+		TokenRegister(u8, EthereumAddress, Erc20Name, Erc20Symbol, u8),
+        /// Someone lock some token. [type, token, chain_id, recipient, amount]
+		LockToken(u8, EthereumAddress, u32, EthereumAddress, U256),
+        /// Someone unlock some token. [source, recipient, amount]
+        UnlockToken(EthereumAddress, EthereumAddress, U256),
 	}
 }
 
@@ -151,6 +165,12 @@ decl_error! {
 		ReceiptProofInv,
 		/// Eth Log - PARSING FAILED
 		EthLogPF,
+        /// Unlock InputData Encoding - FAILED
+        InvalidUnlockEncoding,
+        /// InputData from contract - PARSING FAILED
+        InvalidInputData,
+        /// InputData - NO DIGEST MATCH
+        InvalidHandlerDigest,
 		/// *KTON* Locked - NO SUFFICIENT BACKING ASSETS
 		KtonLockedNSBA,
 		/// *RING* Locked - NO SUFFICIENT BACKING ASSETS
@@ -179,6 +199,8 @@ decl_storage! {
 		pub DepositRedeemAddress get(fn deposit_redeem_address) config(): EthereumAddress;
 		pub SetAuthoritiesAddress get(fn set_authorities_address) config(): EthereumAddress;
 
+        pub BackingAddress get(fn backing_address) config(): EthereumAddress;
+        pub EthereumMappingTokenAddress get(fn ethereum_mapping_token_address) config(): EthereumAddress;
 		pub RingTokenAddress get(fn ring_token_address) config(): EthereumAddress;
 		pub KtonTokenAddress get(fn kton_token_address) config(): EthereumAddress;
 
@@ -187,23 +209,27 @@ decl_storage! {
 		pub LockAssetEvents
 			get(fn lock_asset_events)
 			: Vec<<T as frame_system::Config>::Event>;
+
+		pub TokenRegistrationEvents
+			get(fn token_registration_events)
+			: Vec<<T as frame_system::Config>::Event>;
 	}
 	add_extra_genesis {
 		config(ring_locked): RingBalance<T>;
 		config(kton_locked): KtonBalance<T>;
 		build(|config: &GenesisConfig<T>| {
 			// Create Backing account
-			let _ = T::RingCurrency::make_free_balance_be(
+			let _ = <T as Config>::RingCurrency::make_free_balance_be(
 				&<Module<T>>::account_id(),
-				T::RingCurrency::minimum_balance() + config.ring_locked,
+				<T as Config>::RingCurrency::minimum_balance() + config.ring_locked,
 			);
-			let _ = T::KtonCurrency::make_free_balance_be(
+			let _ = <T as Config>::KtonCurrency::make_free_balance_be(
 				&<Module<T>>::account_id(),
-				T::KtonCurrency::minimum_balance() + config.kton_locked,
+				<T as Config>::KtonCurrency::minimum_balance() + config.kton_locked,
 			);
-			let _ = T::RingCurrency::make_free_balance_be(
+			let _ = <T as Config>::RingCurrency::make_free_balance_be(
 				&<Module<T>>::fee_account_id(),
-				T::RingCurrency::minimum_balance(),
+				<T as Config>::RingCurrency::minimum_balance(),
 			);
 		});
 	}
@@ -229,6 +255,7 @@ decl_module! {
 
 		fn on_initialize(_n: BlockNumber<T>) -> Weight {
 			<LockAssetEvents<T>>::kill();
+            <TokenRegistrationEvents<T>>::kill();
 
 			0
 		}
@@ -269,14 +296,14 @@ decl_module! {
 
 			// 50 Ring for fee
 			// https://github.com/darwinia-network/darwinia-common/pull/377#issuecomment-730369387
-			T::RingCurrency::transfer(&user, &fee_account, T::AdvancedFee::get(), KeepAlive)?;
+			<T as Config>::RingCurrency::transfer(&user, &fee_account, T::AdvancedFee::get(), KeepAlive)?;
 
 			let mut locked = false;
 
 			if !ring_to_lock.is_zero() {
 				ensure!(ring_to_lock < T::RingLockLimit::get(), <Error<T>>::RingLockLim);
 
-				T::RingCurrency::transfer(
+				<T as Config>::RingCurrency::transfer(
 					&user, &Self::account_id(),
 					ring_to_lock,
 					AllowDeath
@@ -299,7 +326,7 @@ decl_module! {
 			if !kton_to_lock.is_zero() {
 				ensure!(kton_to_lock < T::KtonLockLimit::get(), <Error<T>>::KtonLockLim);
 
-				T::KtonCurrency::transfer(
+				<T as Config>::KtonCurrency::transfer(
 					&user,
 					&Self::account_id(),
 					kton_to_lock,
@@ -349,12 +376,12 @@ decl_module! {
 
 			let fee_account = Self::fee_account_id();
 			let sync_reward = T::SyncReward::get().min(
-				T::RingCurrency::usable_balance(&fee_account)
-					.saturating_sub(T::RingCurrency::minimum_balance())
+				<T as Config>::RingCurrency::usable_balance(&fee_account)
+					.saturating_sub(<T as Config>::RingCurrency::minimum_balance())
 			);
 
 			if !sync_reward.is_zero() {
-				T::RingCurrency::transfer(
+				<T as Config>::RingCurrency::transfer(
 					&fee_account,
 					&beneficiary,
 					sync_reward,
@@ -400,6 +427,63 @@ decl_module! {
 			ensure_root(origin)?;
 
 			RedeemStatus::put(status);
+		}
+
+
+        // registration
+        /// Unlock erc20 tokens
+		///
+		#[weight = <T as darwinia_evm::Config>::GasWeightMapping::gas_to_weight(0x100000)]
+		pub fn unlock(origin, proof: EthereumReceiptProofThing<T>) {
+            let tx_index = T::EthereumRelay::gen_receipt_index(&proof);
+            ensure!(!VerifiedProof::contains_key(tx_index), <Error<T>>::AssetAR);
+            let verified_receipt = T::EthereumRelay::verify_receipt(&proof)
+                .map_err(|_| <Error<T>>::ReceiptProofInv)?;
+            let mapping_token_address = EthereumMappingTokenAddress::get();
+            let log_event = Abi::unlock_event();
+            let log_entry = verified_receipt
+                .logs
+                .into_iter()
+                .find(|x| x.address == mapping_token_address 
+                      && x.topics[0] == log_event.signature())
+                .ok_or(<Error<T>>::LogEntryNE)?;
+
+            let log = RawLog {
+                topics: vec![
+                    log_entry.topics[0],
+                    log_entry.topics[1],
+                    log_entry.topics[2]
+                ],
+				data: log_entry.data.clone(),
+            };
+			let result = log_event.parse_log(log).map_err(|_| <Error<T>>::EthLogPF)?;
+            let source = result.params[0]
+                .value
+                .clone()
+                .into_address()
+                .ok_or(<Error<T>>::AddressCF)?;
+            let recipient = result.params[1]
+                .value
+                .clone()
+                .into_address()
+                .ok_or(<Error<T>>::AddressCF)?;
+            let amount = result.params[2]
+                .value
+                .clone()
+                .into_uint()
+                .ok_or(<Error<T>>::IntCF)?;
+
+            let input = Abi::encode_cross_unlock(source, recipient, amount)
+                .map_err(|_| Error::<T>::InvalidUnlockEncoding)?;
+            let backing_contract = BackingAddress::get();
+            dvm_ethereum::Module::<T>::internal_transact(backing_contract, input).map_err(
+                |e| -> &'static str {
+                    log::debug!("call backing contract error {:?}", &e);
+                    e.into()
+                })?;
+
+            VerifiedProof::insert(tx_index, true);
+            Self::deposit_event(RawEvent::UnlockToken(source, recipient, amount));
 		}
 	}
 }
@@ -755,7 +839,7 @@ impl<T: Config> Module<T> {
 			Self::parse_token_redeem_proof(&proof)?;
 
 		if is_ring {
-			Self::redeem_token_cast::<T::RingCurrency>(
+			Self::redeem_token_cast::<<T as Config>::RingCurrency>(
 				redeemer,
 				darwinia_account,
 				tx_index,
@@ -764,7 +848,7 @@ impl<T: Config> Module<T> {
 				fee,
 			)?;
 		} else {
-			Self::redeem_token_cast::<T::KtonCurrency>(
+			Self::redeem_token_cast::<<T as Config>::KtonCurrency>(
 				redeemer,
 				darwinia_account,
 				tx_index,
@@ -835,7 +919,7 @@ impl<T: Config> Module<T> {
 			Self::parse_deposit_redeem_proof(&proof)?;
 
 		ensure!(
-			Self::pot::<T::RingCurrency>() >= redeemed_ring,
+			Self::pot::<<T as Config>::RingCurrency>() >= redeemed_ring,
 			<Error<T>>::RingLockedNSBA
 		);
 		// // Checking redeemer have enough of balance to pay fee, make sure follow up fee transfer will success.
@@ -867,6 +951,42 @@ impl<T: Config> Module<T> {
 
 		Ok(())
 	}
+
+    fn deposit_register_info_event(
+        token: H160,
+        name: Erc20Name,
+        symbol: Erc20Symbol,
+        decimals: u8
+        ) -> DispatchResult {
+		let raw_event = RawEvent::TokenRegister(0, token, name, symbol, decimals);
+		let module_event: <T as Config>::Event = raw_event.clone().into();
+		let system_event: <T as frame_system::Config>::Event = module_event.into();
+		<TokenRegistrationEvents<T>>::append(system_event);
+		Self::deposit_event(raw_event);
+		T::EcdsaAuthorities::schedule_mmr_root(
+			(<frame_system::Pallet<T>>::block_number().saturated_into::<u32>() / 10 * 10 + 10)
+				.saturated_into(),
+		);
+        Ok(())
+    }
+
+    fn deposit_token_lock_event(
+        chain_id: U256,
+        token: H160,
+        recipient: H160,
+        amount: U256
+        ) -> DispatchResult {
+		let raw_event = RawEvent::LockToken(1, token, chain_id.low_u32(), recipient, amount);
+		let module_event: <T as Config>::Event = raw_event.clone().into();
+		let system_event: <T as frame_system::Config>::Event = module_event.into();
+		<TokenRegistrationEvents<T>>::append(system_event);
+		Self::deposit_event(raw_event);
+		T::EcdsaAuthorities::schedule_mmr_root(
+			(<frame_system::Pallet<T>>::block_number().saturated_into::<u32>() / 10 * 10 + 10)
+				.saturated_into(),
+		);
+        Ok(())
+    }
 }
 
 impl<T: Config> Sign<BlockNumber<T>> for Module<T> {
@@ -908,6 +1028,34 @@ impl<T: Config> Sign<BlockNumber<T>> for Module<T> {
 			false
 		}
 	}
+}
+
+impl <T: Config> BackingHandler for Module<T> {
+	fn handle(address: H160, caller: H160, input: &[u8]) -> DispatchResult {
+		ensure!(BackingAddress::get() == caller, <Error<T>>::AssetAR);
+
+        let register_digest = &sha3::Keccak256::digest(&REGISTER_FUNCTION)[..4];
+        let lock_digest = &sha3::Keccak256::digest(&LOCK_FUNCTION)[..4];
+        if &input[..4] == register_digest {
+            let register_info = TokenRegisterInfo::decode(&input).map_err(|_| {
+                    Error::<T>::InvalidInputData })?;
+            return Self::deposit_register_info_event(
+                register_info.0,
+                register_info.1,
+                register_info.2,
+                register_info.3.as_u32() as u8);
+        } else if &input[..4] == lock_digest {
+            let lock_info = TokenLockedInfo::decode(&input).map_err(|_| Error::<T>::InvalidInputData)?;
+            return Self::deposit_token_lock_event(
+                lock_info.chain_id,
+                lock_info.token,
+                lock_info.recipient,
+                lock_info.amount
+                );
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, PartialEq, Encode, Decode, RuntimeDebug)]

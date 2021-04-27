@@ -273,6 +273,11 @@ pub trait IssuingHandler {
 	fn handle(address: H160, caller: H160, input: &[u8]) -> DispatchResult;
 }
 
+/// A contract handle for ethereum backing
+pub trait BackingHandler {
+	fn handle(address: H160, caller: H160, input: &[u8]) -> DispatchResult;
+}
+
 static ISTANBUL_CONFIG: EvmConfig = EvmConfig::istanbul();
 
 /// EVM module trait
@@ -309,6 +314,8 @@ pub trait Config: frame_system::Config + pallet_timestamp::Config {
 	type KtonAccountBasic: AccountBasic;
 	/// Issuing contracts handler
 	type IssuingHandler: IssuingHandler;
+	/// Backing contracts handler
+	type BackingHandler: BackingHandler;
 
 	/// EVM config used in the module.
 	fn config() -> &'static EvmConfig {

@@ -88,11 +88,17 @@ const BUNCH_OF_COINS: Balance = MANY_COINS << 6;
 const TOKEN_REDEEM_ADDRESS: &'static str = "0x49262B932E439271d05634c32978294C7Ea15d0C";
 const DEPOSIT_REDEEM_ADDRESS: &'static str = "0x6EF538314829EfA8386Fc43386cB13B4e0A67D1e";
 const SET_AUTHORITIES_ADDRESS: &'static str = "0xD35Bb6F1bc1C84b53E0995c1830454AB7C4147f1";
+// backing address on darwinia for d2e
+const BACKING_ADDRESS: &'static str = "0xB3abB2386E2983FB87536997d4E66F4f7e69fBdb";
+// mapping token factory address on ethereum for d2e
+const ETHEREUM_MAPPING_TOKEN_ADDRESS: &'static str = "0x676F35e8ce02025c2ce72F8aD0A3dF64e4182FeD";
 const RING_TOKEN_ADDRESS: &'static str = "0xb52FBE2B925ab79a821b261C82c5Ba0814AAA5e0";
 const KTON_TOKEN_ADDRESS: &'static str = "0x1994100c58753793D52c6f457f189aa3ce9cEe94";
 const ETHEREUM_RELAY_AUTHORITY_SIGNER: &'static str = "0x68898db1012808808c903f390909c52d9f706749";
-const MAPPING_FACTORY_ADDRESS: &'static str = "0x6b58D3903Ae8997A5dA02FAAd51333D4Bf6958cC";
-const ETHEREUM_BACKING_ADDRESS: &'static str = "0xbF6E8B2A6387952C39634f4cCF6Acf4FA2b99FA4";
+// mapping token factory address on darwinia for e2d
+const MAPPING_FACTORY_ADDRESS: &'static str = "0x14132f198Db0e5ef5F2BD9aCA176158506507A3D";
+// backing address on ethereum for e2d
+const ETHEREUM_BACKING_ADDRESS: &'static str = "0xcB8531Bc0B7C8F41B55CF4E94698C37b130597B9";
 
 fn session_keys(
 	babe: BabeId,
@@ -345,6 +351,8 @@ fn pangolin_build_spec_genesis() -> pangolin_runtime::GenesisConfig {
 			token_redeem_address: array_bytes::hex2array_unchecked!(TOKEN_REDEEM_ADDRESS, 20).into(),
 			deposit_redeem_address: array_bytes::hex2array_unchecked!(DEPOSIT_REDEEM_ADDRESS, 20).into(),
 			set_authorities_address: array_bytes::hex2array_unchecked!(SET_AUTHORITIES_ADDRESS, 20).into(),
+            backing_address: array_bytes::hex2array_unchecked!(BACKING_ADDRESS, 20).into(),
+            ethereum_mapping_token_address: array_bytes::hex2array_unchecked!(ETHEREUM_MAPPING_TOKEN_ADDRESS, 20).into(),
 			ring_token_address: array_bytes::hex2array_unchecked!(RING_TOKEN_ADDRESS, 20).into(),
 			kton_token_address: array_bytes::hex2array_unchecked!(KTON_TOKEN_ADDRESS, 20).into(),
 			ring_locked: BUNCH_OF_COINS,
@@ -502,6 +510,8 @@ fn pangolin_development_genesis() -> pangolin_runtime::GenesisConfig {
 			token_redeem_address: array_bytes::hex2array_unchecked!(TOKEN_REDEEM_ADDRESS, 20).into(),
 			deposit_redeem_address: array_bytes::hex2array_unchecked!(DEPOSIT_REDEEM_ADDRESS, 20).into(),
 			set_authorities_address: array_bytes::hex2array_unchecked!(SET_AUTHORITIES_ADDRESS, 20).into(),
+            backing_address: array_bytes::hex2array_unchecked!(BACKING_ADDRESS, 20).into(),
+            ethereum_mapping_token_address: array_bytes::hex2array_unchecked!(ETHEREUM_MAPPING_TOKEN_ADDRESS, 20).into(),
 			ring_token_address: array_bytes::hex2array_unchecked!(RING_TOKEN_ADDRESS, 20).into(),
 			kton_token_address: array_bytes::hex2array_unchecked!(KTON_TOKEN_ADDRESS, 20).into(),
 			ring_locked: BUNCH_OF_COINS,

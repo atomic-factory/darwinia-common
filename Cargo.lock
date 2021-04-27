@@ -1391,12 +1391,15 @@ version = "2.2.0"
 dependencies = [
  "array-bytes",
  "darwinia-balances",
+ "darwinia-ethereum-backing-contract",
  "darwinia-ethereum-linear-relay",
  "darwinia-ethereum-relay",
+ "darwinia-evm",
  "darwinia-relay-primitives",
  "darwinia-relayer-game",
  "darwinia-staking",
  "darwinia-support",
+ "dvm-ethereum",
  "ethabi",
  "ethereum-primitives",
  "frame-election-provider-support",
@@ -1409,11 +1412,21 @@ dependencies = [
  "rlp",
  "serde",
  "serde_json",
+ "sha3 0.9.1",
  "sp-core",
  "sp-io",
  "sp-runtime",
  "sp-staking",
  "sp-std",
+]
+
+[[package]]
+name = "darwinia-ethereum-backing-contract"
+version = "2.2.0"
+dependencies = [
+ "ethabi",
+ "ethereum-types",
+ "log",
 ]
 
 [[package]]
@@ -1523,11 +1536,21 @@ dependencies = [
 name = "darwinia-evm-precompile"
 version = "2.2.0"
 dependencies = [
+ "darwinia-evm-precompile-backing",
  "darwinia-evm-precompile-empty",
  "darwinia-evm-precompile-issuing",
  "darwinia-evm-precompile-kton",
  "darwinia-evm-precompile-simple",
  "darwinia-evm-precompile-withdraw",
+]
+
+[[package]]
+name = "darwinia-evm-precompile-backing"
+version = "2.2.0"
+dependencies = [
+ "darwinia-evm",
+ "dp-evm",
+ "evm",
 ]
 
 [[package]]

@@ -117,7 +117,7 @@ decl_event! {
 		/// register new erc20 token
 		RegisterErc20(AccountId, EthereumAddress),
 		/// redeem erc20 token
-		RedeemErc20(AccountId, EthereumAddress),
+		RedeemErc20(AccountId, EthereumAddress, EthereumAddress, EthereumAddress, EthereumAddress, U256),
 		/// erc20 created
 		CreateErc20(EthereumAddress),
 		/// burn event
@@ -174,10 +174,10 @@ decl_module! {
 				Abi::backing_event(),
 				proof)?;
 			let backing_address = EthereumBackingAddress::get();
-			let input = Self::abi_encode_token_redeem(ethlog)?;
+			let (input, token_address, dtoken_address, recipient, amount)  = Self::abi_encode_token_redeem(ethlog)?;
 			Self::transact_mapping_factory(input)?;
 			VerifiedIssuingProof::insert(tx_index, true);
-			Self::deposit_event(RawEvent::RedeemErc20(user, backing_address));
+			Self::deposit_event(RawEvent::RedeemErc20(user, backing_address, token_address, dtoken_address, recipient, amount));
 		}
 	}
 }
@@ -234,7 +234,7 @@ impl<T: Config> Module<T> {
 		Ok(input)
 	}
 
-	fn abi_encode_token_redeem(result: EthLog) -> Result<Vec<u8>, DispatchError> {
+	fn abi_encode_token_redeem(result: EthLog) -> Result<(Vec<u8>, EthereumAddress, EthereumAddress, EthereumAddress, U256), DispatchError> {
 		log::debug!("abi_encode_token_redeem");
 		let token_address = result.params[0]
 			.value
@@ -266,7 +266,7 @@ impl<T: Config> Module<T> {
 			.map_err(|_| Error::<T>::InvalidMintEncoding)?;
 
 		log::debug!("transfer fee will be delived to fee pallet {}", fee);
-		Ok(input)
+		Ok((input, token_address, dtoken_address, recipient, amount))
 	}
 
 	pub fn mapped_token_address(

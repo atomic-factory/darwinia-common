@@ -16,9 +16,13 @@ codec       = { package = "parity-scale-codec", version = "2.0.1", default-featu
 log         = { version = "0.4.14" }
 serde       = { version = "1.0.125", optional = true }
 serde_json  = { version = "1.0.64", optional = true }
+sha3        = { version = "0.9.1", default-features = false }
 # darwinia
+darwinia-ethereum-backing-contract = { default-features = false, path = "contract" }
+darwinia-evm                       = { default-features = false, path = "../../../evm" }
 darwinia-relay-primitives = { default-features = false, path = "../../../../primitives/relay" }
 darwinia-support          = { default-features = false, path = "../../../support" }
+dvm-ethereum                       = { default-features = false, path = "../../../dvm" }
 ethereum-primitives       = { default-features = false, path = "../../../../primitives/ethereum-primitives" }
 # github
 ethabi = { default-features = false, git = "https://github.com/darwinia-network/ethabi.git", branch = "xavier-no-std" }
@@ -63,8 +67,10 @@ crates-std    = [
 	"serde_json",
 ]
 darwinia-std  = [
+	"darwinia-evm/std",
 	"darwinia-relay-primitives/std",
 	"darwinia-support/std",
+	"dvm-ethereum/std",
 	"ethereum-primitives/std",
 ]
 github-std    = ["ethabi/std"]

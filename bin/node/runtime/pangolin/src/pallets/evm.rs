@@ -37,4 +37,5 @@ impl Config for Runtime {
 	type KtonAccountBasic = DvmAccountBasic<Self, Kton, KtonRemainBalance>;
 	type Runner = Runner<Self>;
 	type IssuingHandler = EthereumIssuing;
+	type BackingHandler = EthereumBacking;
 }

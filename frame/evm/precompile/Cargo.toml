@@ -11,6 +11,7 @@ version     = "2.2.0"
 
 [dependencies]
 # darwinia
+darwinia-evm-precompile-backing  = { default-features = false, path = "contracts/backing" }
 darwinia-evm-precompile-empty    = { default-features = false, path = "contracts/empty" }
 darwinia-evm-precompile-issuing  = { default-features = false, path = "contracts/issuing" }
 darwinia-evm-precompile-kton     = { default-features = false, path = "contracts/kton" }
@@ -21,6 +22,7 @@ darwinia-evm-precompile-withdraw = { default-features = false, path = "contracts
 default = ["std"]
 
 std = [
+	"darwinia-evm-precompile-backing/std",
 	"darwinia-evm-precompile-empty/std",
 	"darwinia-evm-precompile-issuing/std",
 	"darwinia-evm-precompile-kton/std",
