@@ -434,7 +434,7 @@ decl_module! {
         /// Unlock erc20 tokens
 		///
 		#[weight = <T as darwinia_evm::Config>::GasWeightMapping::gas_to_weight(0x100000)]
-		pub fn unlock(origin, proof: EthereumReceiptProofThing<T>) {
+		pub fn unlock_erc20(origin, proof: EthereumReceiptProofThing<T>) {
             let tx_index = T::EthereumRelay::gen_receipt_index(&proof);
             ensure!(!VerifiedProof::contains_key(tx_index), <Error<T>>::AssetAR);
             let verified_receipt = T::EthereumRelay::verify_receipt(&proof)
@@ -449,11 +449,7 @@ decl_module! {
                 .ok_or(<Error<T>>::LogEntryNE)?;
 
             let log = RawLog {
-                topics: vec![
-                    log_entry.topics[0],
-                    log_entry.topics[1],
-                    log_entry.topics[2]
-                ],
+                topics: log_entry.topics,
 				data: log_entry.data.clone(),
             };
 			let result = log_event.parse_log(log).map_err(|_| <Error<T>>::EthLogPF)?;
